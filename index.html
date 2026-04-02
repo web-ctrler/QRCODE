@@ -76,7 +76,7 @@
 </div>
 
 <script>
-    // 1. 基本配置 (與 gate.html 一致)
+    // 1. 基本配置
     const SUPABASE_URL = 'https://qwvhlizfkvdfjyrglroi.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dmhsaXpma3ZkZmp5cmdscm9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzUyOTUsImV4cCI6MjA5MDYxMTI5NX0.eUq7QQ4QKaHtTotp0UI0cPIPngPOnm0fugyAhAgJCF8';
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -85,10 +85,13 @@
     const mySid = Math.random().toString(36).substring(2, 10).toUpperCase();
     document.getElementById('sid-display').innerText = mySid;
 
+    // 🌟 關鍵改動：定義掃描後要跳轉的完整 URL
+    // 這邊設定為你的 GitHub Pages 驗證頁面網址
+    const gateAuthUrl = `https://web-ctrler.github.io/QRCODE/index.html?sid=${mySid}`;
+
     // 3. 產生 QR Code
-    // 內容設為此 sid，這樣當電腦端掃到這串字串時，就能去資料庫對應
     new QRCode(document.getElementById("qrcode"), {
-        text: mySid, 
+        text: gateAuthUrl, // 這裡改為完整連結
         width: 180,
         height: 180,
         colorDark : "#000000",
@@ -96,13 +99,18 @@
         correctLevel : QRCode.CorrectLevel.H
     });
 
-    // 4. 監聽閘門狀態 (Realtime)
-    // 當電腦端掃描此 ID 並將資料庫中的狀態更新為 "success" 時，手機自動跳轉
-    async function watchMyGate() {
-        // 先在資料庫建立一個「待命」紀錄
-        await supabaseClient.from('devices').insert([{ session_id: mySid, status: 'pending', device_name: 'Mobile-Pass' }]);
+    console.log("掃描後跳轉目標:", gateAuthUrl);
 
-        // 訂閱頻道
+    // 4. 監聽閘門狀態 (與之前相同)
+    async function watchMyGate() {
+        // 先建立待命紀錄
+        await supabaseClient.from('devices').insert([{ 
+            session_id: mySid, 
+            status: 'pending', 
+            device_name: 'Mobile-Pass' 
+        }]);
+
+        // 訂閱資料庫更新
         supabaseClient
             .channel('gate-watch')
             .on('postgres_changes', { 
@@ -112,7 +120,7 @@
                 filter: `session_id=eq.${mySid}` 
             }, (payload) => {
                 if (payload.new.status === 'success') {
-                    // 如果電腦端驗證通過，手機端也跟著跳轉到 gate.html 顯示開門動畫
+                    // 電腦端確認後，手機端也跳轉到開門動畫頁面
                     window.location.href = `gate.html?sid=${mySid}`;
                 }
             })
