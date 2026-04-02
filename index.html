@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>裝置同步系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #f4f7f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: center; width: 85%; max-width: 320px; }
+        #qrcode { margin: 20px auto; padding: 10px; background: #fff; border: 1px solid #eee; display: inline-block; }
+        .hidden { display: none; }
+        .status { font-weight: bold; margin-top: 15px; color: #007aff; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div id="pc-view" class="hidden">
+        <h2>掃描同步裝置</h2>
+        <p style="font-size: 0.8rem; color: #888;">請使用手機相機掃描下方 QR Code</p>
+        <div id="qrcode"></div>
+    </div>
+
+    <div id="mobile-view" class="hidden">
+        <h2 id="mobile-status">正在同步...</h2>
+        <p id="mobile-msg">請稍候，正在取得裝置資訊</p>
+    </div>
+</div>
+
+<script>
+    const SUPABASE_URL = 'https://qwvhlizfkvdfjyrglroi.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dmhsaXpma3ZkZmp5cmdscm9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzUyOTUsImV4cCI6MjA5MDYxMTI5NX0.eUq7QQ4QKaHtTotp0UI0cPIPngPOnm0fugyAhAgJCF8';
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const sid = urlParams.get('sid');
+
+    async function init() {
+        if (!sid) {
+            // --- 電腦模式：顯示 QR Code ---
+            document.getElementById('pc-view').classList.remove('hidden');
+            const currentUrl = window.location.href + "?sid=" + Math.random().toString(36).substring(7);
+            new QRCode(document.getElementById("qrcode"), {
+                text: currentUrl,
+                width: 200,
+                height: 200
+            });
+        } else {
+            // --- 手機模式：抓取並傳送 ---
+            document.getElementById('mobile-view').classList.remove('hidden');
+            await sendDeviceData(sid);
+        }
+    }
+
+    async function sendDeviceData(targetSid) {
+        const title = document.getElementById('mobile-status');
+        const msg = document.getElementById('mobile-msg');
+
+        try {
+            const ua = navigator.userAgent;
+            const os = /android/i.test(ua) ? "Android" : /iPhone|iPad/i.test(ua) ? "iOS" : "Web";
+            const model = ua.match(/\(([^;]+);/)?.[1] || "Unknown Device";
+
+            // 寫入 Supabase
+            const { error } = await supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+                .from('devices')
+                .insert([{ 
+                    device_name: model, 
+                    os_version: os, 
+                    ip_address: "Local-Auto",
+                    session_id: targetSid 
+                }]);
+
+            if (error) throw error;
+            title.innerText = "✅ 同步成功";
+            msg.innerText = "資料已成功傳入 Supabase！";
+        } catch (err) {
+            title.innerText = "❌ 失敗";
+            msg.innerText = err.message;
+        }
+    }
+
+    window.onload = init;
+</script>
+
+</body>
+</html>
