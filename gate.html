@@ -3,16 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GALAXY GATE - 門禁監控系統</title>
+    <title>GALAXY GATE - 掃描監控系統</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
     
     <style>
         :root {
             --neon-blue: #00d2ff;
             --neon-green: #39ff14;
-            --neon-red: #ff3131;
             --panel-bg: #1a1a2e;
         }
 
@@ -29,17 +28,21 @@
             overflow: hidden;
         }
 
-        /* 標題裝飾 */
-        .header {
-            position: absolute;
-            top: 40px;
-            text-align: center;
-            letter-spacing: 4px;
-        }
-
+        .header { position: absolute; top: 40px; text-align: center; letter-spacing: 4px; }
         .header h1 { margin: 0; font-size: 2rem; color: var(--neon-blue); text-shadow: 0 0 15px var(--neon-blue); }
 
-        /* 艙門外框 */
+        /* 掃描預覽視窗 - 放在背景或側邊 */
+        #reader {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 200px; /* 預覽視窗不用太大 */
+            border: 2px solid var(--neon-blue);
+            border-radius: 10px;
+            overflow: hidden;
+            opacity: 0.7;
+        }
+
         .gate-frame {
             position: relative;
             width: 320px;
@@ -52,7 +55,6 @@
             transition: all 0.5s ease;
         }
 
-        /* 左右門片 */
         .door {
             position: absolute;
             width: 50%;
@@ -61,15 +63,11 @@
             z-index: 10;
             transition: transform 1s cubic-bezier(0.7, 0, 0.3, 1);
             border: 1px solid #444;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
         .left-door { left: 0; border-right: 2px solid var(--neon-blue); }
         .right-door { right: 0; border-left: 2px solid var(--neon-blue); }
 
-        /* 中央發光條 */
         .door-light {
             position: absolute;
             width: 4px;
@@ -79,29 +77,18 @@
             z-index: 11;
             left: 50%;
             transform: translateX(-50%);
-            transition: opacity 0.5s;
         }
 
-        /* 門內內容 (QR Code) */
         .inner-content {
             position: absolute;
             width: 100%;
             height: 100%;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            z-index: 1;
+            background: radial-gradient(circle, #1a1a2e 0%, #000 100%);
         }
 
-        #qrcode {
-            padding: 10px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 0 20px rgba(255,255,255,0.1);
-        }
-
-        /* 狀態面板 */
         .status-panel {
             margin-top: 40px;
             padding: 12px 40px;
@@ -109,22 +96,14 @@
             border: 1px solid var(--neon-blue);
             border-radius: 50px;
             text-align: center;
-            box-shadow: 0 0 15px rgba(0, 210, 255, 0.2);
         }
 
-        #status-text {
-            color: var(--neon-blue);
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-        }
+        #status-text { color: var(--neon-blue); font-size: 0.8rem; letter-spacing: 3px; }
 
-        /* 動態樣式：開門 */
+        /* 動畫 */
         .gate-frame.open .left-door { transform: translateX(-100%); }
         .gate-frame.open .right-door { transform: translateX(100%); }
-        .gate-frame.open .door-light { opacity: 0; }
         .gate-frame.open { border-color: var(--neon-green); box-shadow: 0 0 40px var(--neon-green); }
-
         .access-granted #status-text { color: var(--neon-green); text-shadow: 0 0 10px var(--neon-green); }
     </style>
 </head>
@@ -132,8 +111,10 @@
 
     <div class="header">
         <h1>GALAXY GATE</h1>
-        <p style="font-size: 0.6rem; color: #444; margin-top: 5px;">SECURITY CLEARANCE REQUIRED</p>
+        <p style="font-size: 0.6rem; color: #444; margin-top: 5px;">SCANNER ACTIVE</p>
     </div>
+
+    <div id="reader"></div>
 
     <div class="gate-frame" id="gateFrame">
         <div class="door-light"></div>
@@ -141,13 +122,15 @@
         <div class="door right-door"></div>
         
         <div class="inner-content">
-            <div id="qrcode"></div>
-            <p style="margin-top: 20px; font-size: 0.6rem; color: #666; letter-spacing: 1px;">WAITING FOR SCAN</p>
+            <div style="text-align: center;">
+                <div style="font-size: 3rem; color: var(--neon-blue); opacity: 0.3;">🔒</div>
+                <p style="font-size: 0.6rem; color: var(--neon-blue); margin-top: 10px;">AUTHORIZED PERSONNEL ONLY</p>
+            </div>
         </div>
     </div>
 
     <div class="status-panel" id="statusPanel">
-        <div id="status-text">SYSTEM LOCKED</div>
+        <div id="status-text">WAITING FOR PASS...</div>
     </div>
 
     <script>
@@ -156,66 +139,64 @@
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dmhsaXpma3ZkZmp5cmdscm9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzUyOTUsImV4cCI6MjA5MDYxMTI5NX0.eUq7QQ4QKaHtTotp0UI0cPIPngPOnm0fugyAhAgJCF8';
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // 2. 抓取組件
         const gateFrame = document.getElementById('gateFrame');
         const statusPanel = document.getElementById('statusPanel');
         const statusText = document.getElementById('status-text');
 
-        // 3. 獲取或生成 Session ID
-        const urlParams = new URLSearchParams(window.location.search);
-        // 優先從網址抓 sid (Deno 傳過來的)，沒有的話就隨機生成一個
-        const sessionId = urlParams.get('sid') || Math.random().toString(36).substring(2, 10).toUpperCase();
-
-        // 製作指向 GitHub Pages 的 QR Code
-        const scanUrl = `https://web-ctrler.github.io/QRCODE/index.html?sid=${sessionId}`;
-
-        new QRCode(document.getElementById("qrcode"), {
-            text: scanUrl,
-            width: 160,
-            height: 160,
-            colorDark : "#000000",
-            colorLight : "#ffffff",
-            correctLevel : QRCode.CorrectLevel.H
-        });
-
-        console.log("閘門初始化完成，Session ID:", sessionId);
-
-        // 4. Realtime 監聽：當有新裝置掃碼並 insert 進 devices 表格時
-        supabase
-            .channel('gate_channel')
+        // 2. 監聽 Supabase (Realtime)
+        // 只要資料庫 status 變成 success，無論誰改的，門都會開
+        supabase.channel('gate_realtime')
             .on('postgres_changes', { 
-                event: 'INSERT', 
+                event: 'UPDATE', 
                 schema: 'public', 
-                table: 'devices',
-                filter: `session_id=eq.${sessionId}` 
+                table: 'devices' 
             }, payload => {
-                console.log("接收到授權訊號:", payload.new);
-                handleAccessGranted(payload.new);
-            })
-            .subscribe();
+                if (payload.new.status === 'success') {
+                    handleAccessGranted(payload.new);
+                }
+            }).subscribe();
 
-        // 5. 授權成功處理
+        // 3. 🌟 掃描器邏輯：當攝影機掃到內容時
+        async function onScanSuccess(decodedText) {
+            console.log("掃描到內容:", decodedText);
+
+            // 檢查是否符合我們定義的指令格式
+            if (decodedText.startsWith("GATE_OPEN_CMD:")) {
+                const sid = decodedText.split(":")[1];
+                
+                // 更新狀態為 success -> 觸發 Realtime 開門
+                const { error } = await supabase
+                    .from('devices')
+                    .update({ status: 'success' })
+                    .eq('session_id', sid);
+
+                if (!error) {
+                    // 暫停掃描 5 秒防止重複觸發
+                    html5QrcodeScanner.pause();
+                    setTimeout(() => html5QrcodeScanner.resume(), 5000);
+                }
+            }
+        }
+
+        // 啟動鏡頭
+        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 15, qrbox: 150 });
+        html5QrcodeScanner.render(onScanSuccess);
+
+        // 4. 開門與語音反饋
         function handleAccessGranted(deviceData) {
-            // 視覺動畫
             gateFrame.classList.add('open');
             statusPanel.classList.add('access-granted');
             statusText.innerText = "ACCESS GRANTED";
 
-            // 語音反饋
-            const welcomeMsg = `授權成功。歡迎進入，偵測到裝置：${deviceData.device_name}。門已開啟。`;
-            const utter = new SpeechSynthesisUtterance(welcomeMsg);
+            const utter = new SpeechSynthesisUtterance(`授權成功。歡迎進入，偵測到通行證：${deviceData.session_id}`);
             utter.lang = 'zh-TW';
-            utter.rate = 1.1; // 稍微快一點更有科技感
             window.speechSynthesis.speak(utter);
 
-            // 8 秒後自動重啟，準備下一次驗證
+            // 8 秒後自動復原大門
             setTimeout(() => {
                 gateFrame.classList.remove('open');
                 statusPanel.classList.remove('access-granted');
-                statusText.innerText = "SYSTEM LOCKED";
-                
-                // 1.5 秒後重整頁面（更換 SID）
-                setTimeout(() => location.reload(), 1500);
+                statusText.innerText = "WAITING FOR PASS...";
             }, 8000);
         }
     </script>
