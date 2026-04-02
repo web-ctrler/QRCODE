@@ -52,43 +52,70 @@
 
     <div style="margin-top: 10px;">
         <span class="status-dot"></span>
-        <span id="sid-text">READY</span>
+        <span id="sid-text">INITIALIZING...</span>
     </div>
 </div>
 
 <script>
+    // 1. 基本設定
     const SUPABASE_URL = 'https://qwvhlizfkvdfjyrglroi.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dmhsaXpma3ZkZmp5cmdscm9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzUyOTUsImV4cCI6MjA5MDYxMTI5NX0.eUq7QQ4QKaHtTotp0UI0cPIPngPOnm0fugyAhAgJCF8';
+    
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// 核心：建立實例並存入變數 supabaseClient
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // 2. 生成唯一的 Session ID (原本漏掉的)
+    const mySid = Math.random().toString(36).substring(2, 10).toUpperCase();
+    document.getElementById('sid-text').innerText = `ID: ${mySid}`;
 
-async function startListening() {
-    try {
-        // ✅ 必須使用 supabaseClient，它才帶有剛才設定的 API Key
-        const { data, error } = await supabaseClient
-            .from('devices')
-            .insert([{ 
-                session_id: mySid, 
-                status: 'pending',
-                device_name: 'Physical-Pass-Mode'
-            }]);
+    // 3. 產生 QR Code (原本漏掉的)
+    const secretCommand = `GATE_OPEN_CMD:${mySid}`;
+    new QRCode(document.getElementById("qrcode"), {
+        text: secretCommand,
+        width: 180,
+        height: 180,
+        correctLevel : QRCode.CorrectLevel.H
+    });
 
-        if (error) throw error; // 如果 Key 有錯，這裡會抓到
+    // 4. 啟動資料庫連線與監聽
+    async function startListening() {
+        try {
+            // 向資料庫註冊此 ID
+            const { error } = await supabaseClient
+                .from('devices')
+                .insert([{ 
+                    session_id: mySid, 
+                    status: 'pending',
+                    device_name: 'Physical-Pass-Mode'
+                }]);
 
-        // ✅ 同樣使用 supabaseClient 進行監聽
-        supabaseClient.channel('pass-channel')
-            .on('postgres_changes', { 
-                event: 'UPDATE', 
-                schema: 'public', 
-                table: 'devices',
-                filter: `session_id=eq.${mySid}` 
-            }, (payload) => {
-                // ... 成功後的邏輯
-            }).subscribe();
-            
-    } catch (err) {
-        console.error("Supabase 連線失敗:", err.message);
-        // 如果看到 "No API key found"，表示 supabaseClient 這個變數可能被重新賦值或抓錯對象了
+            if (error) throw error;
+
+            // 監聽狀態更新
+            supabaseClient.channel('pass-channel')
+                .on('postgres_changes', { 
+                    event: 'UPDATE', 
+                    schema: 'public', 
+                    table: 'devices',
+                    filter: `session_id=eq.${mySid}` 
+                }, (payload) => {
+                    if (payload.new.status === 'success') {
+                        document.getElementById('mainCard').style.borderColor = '#39ff14';
+                        document.getElementById('mainCard').style.boxShadow = '0 0 50px rgba(57, 255, 20, 0.4)';
+                        document.getElementById('sid-text').innerText = "ACCESS GRANTED";
+                        document.getElementById('sid-text').style.color = '#39ff14';
+                        
+                        setTimeout(() => location.reload(), 5000);
+                    }
+                }).subscribe();
+                
+        } catch (err) {
+            console.error("Supabase 錯誤:", err.message);
+            document.getElementById('sid-text').innerText = "CONNECTION ERROR";
+            document.getElementById('sid-text').style.color = "red";
+        }
     }
-}
+
+    startListening();
+</script>
+</body>
+</html>
