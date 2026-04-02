@@ -28,6 +28,7 @@
             border: 2px solid var(--neon-blue);
             width: 85%; max-width: 320px; text-align: center;
             position: relative;
+            transition: all 0.5s ease;
         }
         #qrcode {
             background: white; padding: 15px; border-radius: 15px;
@@ -58,17 +59,15 @@
 <script>
     const SUPABASE_URL = 'https://qwvhlizfkvdfjyrglroi.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dmhsaXpma3ZkZmp5cmdscm9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzUyOTUsImV4cCI6MjA5MDYxMTI5NX0.eUq7QQ4QKaHtTotp0UI0cPIPngPOnm0fugyAhAgJCF8';
+    
+    // 初始化實例名為 supabaseClient
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // 1. 生成唯一的指令 ID
     const mySid = Math.random().toString(36).substring(2, 10).toUpperCase();
     document.getElementById('sid-text').innerText = `ID: ${mySid}`;
 
-    // 🌟 關鍵改動：QR Code 內容改為純指令格式，不含 http://
-    // 這樣掃描時不會當作網址，而是當作一串資料
     const secretCommand = `GATE_OPEN_CMD:${mySid}`;
 
-    // 2. 產生 QR Code
     new QRCode(document.getElementById("qrcode"), {
         text: secretCommand,
         width: 180,
@@ -76,17 +75,16 @@
         correctLevel : QRCode.CorrectLevel.H
     });
 
-    // 3. 監聽閘門反饋
     async function startListening() {
-        // 在資料庫註冊這張臨時卡片
-        await supabase.from('devices').insert([{ 
+        // 修正處 1：改成 supabaseClient
+        await supabaseClient.from('devices').insert([{ 
             session_id: mySid, 
             status: 'pending',
             device_name: 'Physical-Pass-Mode'
         }]);
 
-        // 監聽：如果閘門確認掃描成功，手機畫面做個簡單的視覺反饋（不跳轉）
-        supabase.channel('pass-channel')
+        // 修正處 2：改成 supabaseClient
+        supabaseClient.channel('pass-channel')
             .on('postgres_changes', { 
                 event: 'UPDATE', 
                 schema: 'public', 
@@ -98,7 +96,6 @@
                     document.getElementById('sid-text').innerText = "ACCESS GRANTED";
                     document.getElementById('sid-text').style.color = '#39ff14';
                     
-                    // 5秒後恢復原狀，方便下次使用
                     setTimeout(() => location.reload(), 5000);
                 }
             }).subscribe();
