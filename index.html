@@ -3,85 +3,141 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>裝置同步系統</title>
+    <title>GALAXY GATE - 通行授權</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: -apple-system, sans-serif; background: #f4f7f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: center; width: 85%; max-width: 320px; }
-        #qrcode { margin: 20px auto; padding: 10px; background: #fff; border: 1px solid #eee; display: inline-block; }
+        :root {
+            --neon-blue: #00d2ff;
+            --neon-green: #39ff14;
+            --bg-dark: #050505;
+        }
+
+        body { 
+            font-family: 'Orbitron', -apple-system, sans-serif; 
+            background: var(--bg-dark); 
+            color: white;
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+            text-align: center;
+        }
+
+        .card { 
+            background: #1a1a2e; 
+            padding: 2.5rem; 
+            border-radius: 24px; 
+            box-shadow: 0 0 20px rgba(0, 210, 255, 0.3); 
+            border: 1px solid var(--neon-blue);
+            width: 85%; 
+            max-width: 320px; 
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--neon-blue);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        h2 { font-size: 1.2rem; color: var(--neon-blue); margin-bottom: 10px; }
+        p { color: #888; font-size: 0.8rem; line-height: 1.5; }
+        
+        .success-text { color: var(--neon-green) !important; text-shadow: 0 0 10px var(--neon-green); }
+        .error-text { color: #ff3131 !important; }
+        
         .hidden { display: none; }
-        .status { font-weight: bold; margin-top: 15px; color: #007aff; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <div id="pc-view" class="hidden">
-        <h2>掃描同步裝置</h2>
-        <p style="font-size: 0.8rem; color: #888;">請使用手機相機掃描下方 QR Code</p>
-        <div id="qrcode"></div>
+    <div id="loading-view">
+        <div class="loader"></div>
+        <h2>正在驗證身份...</h2>
+        <p>系統正在與遠端閘門進行加密通訊</p>
     </div>
 
-    <div id="mobile-view" class="hidden">
-        <h2 id="mobile-status">正在同步...</h2>
-        <p id="mobile-msg">請稍候，正在取得裝置資訊</p>
+    <div id="result-view" class="hidden">
+        <h2 id="status-title"></h2>
+        <p id="status-msg"></p>
+        <div style="margin-top: 20px; font-size: 0.7rem; color: #444;">
+            Session: <span id="sid-display" style="color:#666;"></span>
+        </div>
     </div>
 </div>
 
 <script>
+    // 1. 配置資料 (須與 gate.html 一致)
     const SUPABASE_URL = 'https://qwvhlizfkvdfjyrglroi.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dmhsaXpma3ZkZmp5cmdscm9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzUyOTUsImV4cCI6MjA5MDYxMTI5NX0.eUq7QQ4QKaHtTotp0UI0cPIPngPOnm0fugyAhAgJCF8';
     
+    // 初始化 Supabase
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // 2. 取得網址中的 Session ID
     const urlParams = new URLSearchParams(window.location.search);
     const sid = urlParams.get('sid');
 
-    async function init() {
+    async function startSync() {
         if (!sid) {
-            // --- 電腦模式：顯示 QR Code ---
-            document.getElementById('pc-view').classList.remove('hidden');
-            const currentUrl = window.location.href + "?sid=" + Math.random().toString(36).substring(7);
-            new QRCode(document.getElementById("qrcode"), {
-                text: currentUrl,
-                width: 200,
-                height: 200
-            });
-        } else {
-            // --- 手機模式：抓取並傳送 ---
-            document.getElementById('mobile-view').classList.remove('hidden');
-            await sendDeviceData(sid);
+            showResult("❌ 無效請求", "未偵測到 Session ID，請重新掃描閘門 QR Code。", "error");
+            return;
         }
-    }
 
-    async function sendDeviceData(targetSid) {
-        const title = document.getElementById('mobile-status');
-        const msg = document.getElementById('mobile-msg');
+        document.getElementById('sid-display').innerText = sid;
 
         try {
+            // 3. 獲取裝置資訊
             const ua = navigator.userAgent;
             const os = /android/i.test(ua) ? "Android" : /iPhone|iPad/i.test(ua) ? "iOS" : "Web";
-            const model = ua.match(/\(([^;]+);/)?.[1] || "Unknown Device";
+            
+            // 提取手機型號 (簡化版)
+            let model = "Unknown Device";
+            const match = ua.match(/\(([^;]+);/);
+            if (match) model = match[1];
 
-            // 寫入 Supabase
-            const { error } = await supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+            // 4. 寫入 Supabase (這會觸發 gate.html 的 Realtime 監聽)
+            const { error } = await supabaseClient
                 .from('devices')
                 .insert([{ 
                     device_name: model, 
                     os_version: os, 
-                    ip_address: "Local-Auto",
-                    session_id: targetSid 
+                    ip_address: "Mobile-Cloud",
+                    session_id: sid 
                 }]);
 
             if (error) throw error;
-            title.innerText = "✅ 同步成功";
-            msg.innerText = "資料已成功傳入 Supabase！";
+
+            showResult("✅ 驗證成功", "已獲得通行權限，請查看電腦端閘門。", "success");
         } catch (err) {
-            title.innerText = "❌ 失敗";
-            msg.innerText = err.message;
+            console.error(err);
+            showResult("❌ 同步失敗", err.message, "error");
         }
     }
 
-    window.onload = init;
+    function showResult(title, msg, type) {
+        document.getElementById('loading-view').classList.add('hidden');
+        const resultView = document.getElementById('result-view');
+        const titleEl = document.getElementById('status-title');
+        
+        resultView.classList.remove('hidden');
+        titleEl.innerText = title;
+        document.getElementById('status-msg').innerText = msg;
+
+        if (type === "success") titleEl.classList.add('success-text');
+        if (type === "error") titleEl.classList.add('error-text');
+    }
+
+    // 頁面載入後自動執行
+    window.onload = startSync;
 </script>
 
 </body>
