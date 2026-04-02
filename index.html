@@ -63,12 +63,12 @@
     
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // 2. 生成唯一的 Session ID (原本漏掉的)
-    const mySid = Math.random().toString(36).substring(2, 10).toUpperCase();
-    document.getElementById('sid-text').innerText = `ID: ${mySid}`;
+    // 2. 生成新的 Auth Token (對應新的 SQL 欄位)
+    const myToken = Math.random().toString(36).substring(2, 12).toUpperCase();
+    document.getElementById('sid-text').innerText = `TOKEN: ${myToken}`;
 
-    // 3. 產生 QR Code (原本漏掉的)
-    const secretCommand = `GATE_OPEN_CMD:${mySid}`;
+    // 3. 產生 QR Code (指令內容)
+    const secretCommand = `GATE_OPEN_CMD:${myToken}`;
     new QRCode(document.getElementById("qrcode"), {
         text: secretCommand,
         width: 180,
@@ -79,38 +79,40 @@
     // 4. 啟動資料庫連線與監聽
     async function startListening() {
         try {
-            // 向資料庫註冊此 ID
+            // 向資料庫註冊紀錄 (使用全新欄位名)
             const { error } = await supabaseClient
                 .from('devices')
                 .insert([{ 
-                    session_id: mySid, 
-                    status: 'pending',
-                    device_name: 'Physical-Pass-Mode'
+                    auth_token: myToken,      // 對應 SQL: auth_token
+                    gate_state: 'waiting',    // 對應 SQL: gate_state
+                    device_tag: 'Galaxy-Mobile-Pass' // 對應 SQL: device_tag
                 }]);
 
             if (error) throw error;
 
-            // 監聽狀態更新
-            supabaseClient.channel('pass-channel')
+            // 監聽狀態更新 (監聽 gate_state 欄位)
+            supabaseClient.channel('gate-realtime')
                 .on('postgres_changes', { 
                     event: 'UPDATE', 
                     schema: 'public', 
                     table: 'devices',
-                    filter: `session_id=eq.${mySid}` 
+                    filter: `auth_token=eq.${myToken}` 
                 }, (payload) => {
-                    if (payload.new.status === 'success') {
+                    // 如果大門端將狀態改為 'opened'
+                    if (payload.new.gate_state === 'opened') {
                         document.getElementById('mainCard').style.borderColor = '#39ff14';
                         document.getElementById('mainCard').style.boxShadow = '0 0 50px rgba(57, 255, 20, 0.4)';
                         document.getElementById('sid-text').innerText = "ACCESS GRANTED";
                         document.getElementById('sid-text').style.color = '#39ff14';
                         
+                        // 5 秒後重置，準備下一次通行
                         setTimeout(() => location.reload(), 5000);
                     }
                 }).subscribe();
                 
         } catch (err) {
-            console.error("Supabase 錯誤:", err.message);
-            document.getElementById('sid-text').innerText = "CONNECTION ERROR";
+            console.error("連線錯誤:", err.message);
+            document.getElementById('sid-text').innerText = "SYSTEM ERROR";
             document.getElementById('sid-text').style.color = "red";
         }
     }
