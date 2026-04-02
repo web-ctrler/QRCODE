@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GALAXY GATE - 掃描監控系統</title>
+    <title>GALAXY GATE - 指揮中心</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://unpkg.com/html5-qrcode"></script>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
     
     <style>
@@ -30,18 +29,6 @@
 
         .header { position: absolute; top: 40px; text-align: center; letter-spacing: 4px; }
         .header h1 { margin: 0; font-size: 2rem; color: var(--neon-blue); text-shadow: 0 0 15px var(--neon-blue); }
-
-        #reader {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 200px;
-            border: 2px solid var(--neon-blue);
-            border-radius: 10px;
-            overflow: hidden;
-            opacity: 0.7;
-            background: black;
-        }
 
         .gate-frame {
             position: relative;
@@ -100,6 +87,7 @@
 
         #status-text { color: var(--neon-blue); font-size: 0.8rem; letter-spacing: 3px; }
 
+        /* 動態樣式 */
         .gate-frame.open .left-door { transform: translateX(-100%); }
         .gate-frame.open .right-door { transform: translateX(100%); }
         .gate-frame.open { border-color: var(--neon-green); box-shadow: 0 0 40px var(--neon-green); }
@@ -110,10 +98,8 @@
 
     <div class="header">
         <h1>GALAXY GATE</h1>
-        <p style="font-size: 0.6rem; color: #444; margin-top: 5px;">SCANNER ACTIVE</p>
+        <p style="font-size: 0.6rem; color: #444; margin-top: 5px;">COMMAND CENTER ACTIVE</p>
     </div>
-
-    <div id="reader"></div>
 
     <div class="gate-frame" id="gateFrame">
         <div class="door-light"></div>
@@ -122,14 +108,14 @@
         
         <div class="inner-content">
             <div style="text-align: center;">
-                <div style="font-size: 3rem; color: var(--neon-blue); opacity: 0.3;">🔒</div>
-                <p style="font-size: 0.6rem; color: var(--neon-blue); margin-top: 10px;">AUTHORIZED PERSONNEL ONLY</p>
+                <div id="lock-icon" style="font-size: 3rem; color: var(--neon-blue); opacity: 0.3;">🔒</div>
+                <p style="font-size: 0.6rem; color: var(--neon-blue); margin-top: 10px;">SECURED AREA</p>
             </div>
         </div>
     </div>
 
     <div class="status-panel" id="statusPanel">
-        <div id="status-text">WAITING FOR PASS...</div>
+        <div id="status-text">SYSTEM STANDBY - READY</div>
     </div>
 
     <script>
@@ -137,14 +123,14 @@
         const SUPABASE_URL = 'https://qwvhlizfkvdfjyrglroi.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dmhsaXpma3ZkZmp5cmdscm9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzUyOTUsImV4cCI6MjA5MDYxMTI5NX0.eUq7QQ4QKaHtTotp0UI0cPIPngPOnm0fugyAhAgJCF8';
         
-        // 確保這裡定義的是 supabaseClient
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const gateFrame = document.getElementById('gateFrame');
         const statusPanel = document.getElementById('statusPanel');
         const statusText = document.getElementById('status-text');
+        const lockIcon = document.getElementById('lock-icon');
 
-        // 2. 監聽 Supabase (使用 supabaseClient)
+        // 2. 監聽資料庫更新 (實時連線)
         supabaseClient
             .channel('gate_realtime')
             .on('postgres_changes', { 
@@ -152,48 +138,32 @@
                 schema: 'public', 
                 table: 'devices' 
             }, payload => {
-                if (payload.new.status === 'success') {
+                // 如果有人掃碼成功，狀態變為 'opened'
+                if (payload.new.gate_state === 'opened') {
                     handleAccessGranted(payload.new);
                 }
             }).subscribe();
 
-        // 3. 掃描器邏輯
-        async function onScanSuccess(decodedText) {
-            console.log("掃描到內容:", decodedText);
-
-            if (decodedText.startsWith("GATE_OPEN_CMD:")) {
-                const sid = decodedText.split(":")[1];
-                
-                // 這裡也修正為使用 supabaseClient
-                const { error } = await supabaseClient
-                    .from('devices')
-                    .update({ status: 'success' })
-                    .eq('session_id', sid);
-
-                if (!error) {
-                    html5QrcodeScanner.pause();
-                    setTimeout(() => html5QrcodeScanner.resume(), 5000);
-                }
-            }
-        }
-
-        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 15, qrbox: 150 });
-        html5QrcodeScanner.render(onScanSuccess);
-
+        // 3. 處理開門動作
         function handleAccessGranted(deviceData) {
+            // UI 動畫
             gateFrame.classList.add('open');
             statusPanel.classList.add('access-granted');
             statusText.innerText = "ACCESS GRANTED";
+            lockIcon.innerText = "🔓";
 
-            const welcomeMsg = `授權成功。歡迎進入，偵測到通行證：${deviceData.session_id}`;
+            // 語音反饋
+            const welcomeMsg = `授權成功。歡迎進入。`;
             const utter = new SpeechSynthesisUtterance(welcomeMsg);
             utter.lang = 'zh-TW';
             window.speechSynthesis.speak(utter);
 
+            // 8 秒後自動關門並恢復待機
             setTimeout(() => {
                 gateFrame.classList.remove('open');
                 statusPanel.classList.remove('access-granted');
-                statusText.innerText = "WAITING FOR PASS...";
+                statusText.innerText = "SYSTEM STANDBY - READY";
+                lockIcon.innerText = "🔒";
             }, 8000);
         }
     </script>
