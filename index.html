@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GALAXY PASS - 手機通行證</title>
+    <title>GALAXY PASS - 數位通行卡</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
@@ -14,105 +14,79 @@
             --bg-dark: #050505;
             --panel-bg: #1a1a2e;
         }
-
         body { 
             font-family: 'Orbitron', sans-serif; 
             background: var(--bg-dark); 
             color: white;
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            height: 100vh; 
-            margin: 0; 
-            overflow: hidden;
+            display: flex; justify-content: center; align-items: center; 
+            height: 100vh; margin: 0; overflow: hidden;
         }
-
         .card { 
             background: var(--panel-bg); 
-            padding: 2rem; 
-            border-radius: 24px; 
-            box-shadow: 0 0 30px rgba(0, 210, 255, 0.2); 
-            border: 1px solid var(--neon-blue);
-            width: 80%; 
-            max-width: 320px; 
-            text-align: center;
+            padding: 2.5rem; border-radius: 30px; 
+            box-shadow: 0 0 40px rgba(0, 210, 255, 0.2); 
+            border: 2px solid var(--neon-blue);
+            width: 85%; max-width: 320px; text-align: center;
+            position: relative;
         }
-
         #qrcode {
-            background: white;
-            padding: 12px;
-            border-radius: 12px;
-            display: inline-block;
-            margin: 20px 0;
-            box-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+            background: white; padding: 15px; border-radius: 15px;
+            display: inline-block; margin: 25px 0;
         }
-
-        h2 { font-size: 1.1rem; color: var(--neon-blue); margin-bottom: 5px; letter-spacing: 2px; }
-        p { color: #888; font-size: 0.75rem; margin-bottom: 10px; }
-        
-        .status-box {
-            font-size: 0.7rem;
-            color: #444;
-            border-top: 1px solid #333;
-            padding-top: 15px;
-            margin-top: 10px;
+        .status-dot {
+            width: 10px; height: 10px; background: var(--neon-green);
+            border-radius: 50%; display: inline-block; margin-right: 8px;
+            box-shadow: 0 0 10px var(--neon-green);
         }
-
-        #sid-display { color: var(--neon-blue); font-weight: bold; }
+        #sid-text { font-size: 0.8rem; color: var(--neon-blue); letter-spacing: 2px; }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <h2>GALAXY PASS</h2>
-    <p>請出示此碼對準閘門掃描儀</p>
+<div class="card" id="mainCard">
+    <h2 style="font-size: 1.2rem; letter-spacing: 4px; margin: 0;">GALAXY PASS</h2>
+    <p style="font-size: 0.7rem; color: #666; margin-top: 5px;">LEVEL 4 AUTHORIZATION</p>
     
     <div id="qrcode"></div>
 
-    <div class="status-box">
-        SID: <span id="sid-display">LOADING...</span>
-        <div id="auth-status" style="margin-top: 5px; color: var(--neon-green);">● 等待掃描中</div>
+    <div style="margin-top: 10px;">
+        <span class="status-dot"></span>
+        <span id="sid-text">READY</span>
     </div>
 </div>
 
 <script>
-    // 1. 基本配置
     const SUPABASE_URL = 'https://qwvhlizfkvdfjyrglroi.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dmhsaXpma3ZkZmp5cmdscm9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzUyOTUsImV4cCI6MjA5MDYxMTI5NX0.eUq7QQ4QKaHtTotp0UI0cPIPngPOnm0fugyAhAgJCF8';
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // 2. 生成此裝置唯一的 Session ID
+    // 1. 生成唯一的指令 ID
     const mySid = Math.random().toString(36).substring(2, 10).toUpperCase();
-    document.getElementById('sid-display').innerText = mySid;
+    document.getElementById('sid-text').innerText = `ID: ${mySid}`;
 
-    // 🌟 關鍵改動：定義掃描後要跳轉的完整 URL
-    // 這邊設定為你的 GitHub Pages 驗證頁面網址
-    const gateAuthUrl = `https://web-ctrler.github.io/QRCODE/index.html?sid=${mySid}`;
+    // 🌟 關鍵改動：QR Code 內容改為純指令格式，不含 http://
+    // 這樣掃描時不會當作網址，而是當作一串資料
+    const secretCommand = `GATE_OPEN_CMD:${mySid}`;
 
-    // 3. 產生 QR Code
+    // 2. 產生 QR Code
     new QRCode(document.getElementById("qrcode"), {
-        text: gateAuthUrl, // 這裡改為完整連結
+        text: secretCommand,
         width: 180,
         height: 180,
-        colorDark : "#000000",
-        colorLight : "#ffffff",
         correctLevel : QRCode.CorrectLevel.H
     });
 
-    console.log("掃描後跳轉目標:", gateAuthUrl);
-
-    // 4. 監聽閘門狀態 (與之前相同)
-    async function watchMyGate() {
-        // 先建立待命紀錄
-        await supabaseClient.from('devices').insert([{ 
+    // 3. 監聽閘門反饋
+    async function startListening() {
+        // 在資料庫註冊這張臨時卡片
+        await supabase.from('devices').insert([{ 
             session_id: mySid, 
-            status: 'pending', 
-            device_name: 'Mobile-Pass' 
+            status: 'pending',
+            device_name: 'Physical-Pass-Mode'
         }]);
 
-        // 訂閱資料庫更新
-        supabaseClient
-            .channel('gate-watch')
+        // 監聽：如果閘門確認掃描成功，手機畫面做個簡單的視覺反饋（不跳轉）
+        supabase.channel('pass-channel')
             .on('postgres_changes', { 
                 event: 'UPDATE', 
                 schema: 'public', 
@@ -120,15 +94,17 @@
                 filter: `session_id=eq.${mySid}` 
             }, (payload) => {
                 if (payload.new.status === 'success') {
-                    // 電腦端確認後，手機端也跳轉到開門動畫頁面
-                    window.location.href = `gate.html?sid=${mySid}`;
+                    document.getElementById('mainCard').style.borderColor = '#39ff14';
+                    document.getElementById('sid-text').innerText = "ACCESS GRANTED";
+                    document.getElementById('sid-text').style.color = '#39ff14';
+                    
+                    // 5秒後恢復原狀，方便下次使用
+                    setTimeout(() => location.reload(), 5000);
                 }
-            })
-            .subscribe();
+            }).subscribe();
     }
 
-    watchMyGate();
+    startListening();
 </script>
-
 </body>
 </html>
