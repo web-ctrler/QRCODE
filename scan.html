@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GALAXY SCANNER - 閘門讀卡機</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { background: #000; color: #00d2ff; font-family: 'Orbitron', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        #reader { width: 400px; border: 2px solid #00d2ff; border-radius: 20px; box-shadow: 0 0 20px rgba(0, 210, 255, 0.3); overflow: hidden; background: #050505; }
+        .info { margin-top: 20px; text-align: center; letter-spacing: 2px; }
+        #log { font-size: 0.7rem; color: #444; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2 style="letter-spacing: 5px;">SCANNER ACTIVE</h2>
+    <div id="reader"></div>
+    
+    <div class="info">
+        <div id="status">READY TO SCAN</div>
+        <div id="log">等待通行證靠近...</div>
+    </div>
+
+<script>
+    const SUPABASE_URL = 'https://qwvhlizfkvdfjyrglroi.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dmhsaXpma3ZkZmp5cmdscm9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzUyOTUsImV4cCI6MjA5MDYxMTI5NX0.eUq7QQ4QKaHtTotp0UI0cPIPngPOnm0fugyAhAgJCF8';
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function onScanSuccess(decodedText) {
+        if (decodedText.startsWith("GATE_OPEN_CMD:")) {
+            const sid = decodedText.split(":")[1];
+            document.getElementById('status').innerText = "IDENTIFIED: " + sid;
+            document.getElementById('status').style.color = "#39ff14";
+
+            // 🛠️ 核心：把成功訊號送回 Supabase
+            const { error } = await supabaseClient
+                .from('devices')
+                .update({ status: 'success' })
+                .eq('session_id', sid);
+
+            if (!error) {
+                document.getElementById('log').innerText = "指令已送達雲端，閘門開啟中...";
+                // 暫停掃描 3 秒，避免重複觸發
+                html5QrcodeScanner.pause();
+                setTimeout(() => {
+                    html5QrcodeScanner.resume();
+                    document.getElementById('status').innerText = "READY TO SCAN";
+                    document.getElementById('status').style.color = "#00d2ff";
+                    document.getElementById('log').innerText = "等待下一次掃描...";
+                }, 3000);
+            }
+        }
+    }
+
+    // 初始化掃描器
+    const html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
+        fps: 20, 
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1.0 
+    });
+    
+    html5QrcodeScanner.render(onScanSuccess);
+</script>
+</body>
+</html>
