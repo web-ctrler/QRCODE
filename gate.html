@@ -31,16 +31,16 @@
         .header { position: absolute; top: 40px; text-align: center; letter-spacing: 4px; }
         .header h1 { margin: 0; font-size: 2rem; color: var(--neon-blue); text-shadow: 0 0 15px var(--neon-blue); }
 
-        /* 掃描預覽視窗 - 放在背景或側邊 */
         #reader {
             position: absolute;
             bottom: 20px;
             right: 20px;
-            width: 200px; /* 預覽視窗不用太大 */
+            width: 200px;
             border: 2px solid var(--neon-blue);
             border-radius: 10px;
             overflow: hidden;
             opacity: 0.7;
+            background: black;
         }
 
         .gate-frame {
@@ -100,7 +100,6 @@
 
         #status-text { color: var(--neon-blue); font-size: 0.8rem; letter-spacing: 3px; }
 
-        /* 動畫 */
         .gate-frame.open .left-door { transform: translateX(-100%); }
         .gate-frame.open .right-door { transform: translateX(100%); }
         .gate-frame.open { border-color: var(--neon-green); box-shadow: 0 0 40px var(--neon-green); }
@@ -137,15 +136,17 @@
         // 1. 初始化 Supabase
         const SUPABASE_URL = 'https://qwvhlizfkvdfjyrglroi.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3dmhsaXpma3ZkZmp5cmdscm9pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMzUyOTUsImV4cCI6MjA5MDYxMTI5NX0.eUq7QQ4QKaHtTotp0UI0cPIPngPOnm0fugyAhAgJCF8';
+        
+        // 確保這裡定義的是 supabaseClient
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const gateFrame = document.getElementById('gateFrame');
         const statusPanel = document.getElementById('statusPanel');
         const statusText = document.getElementById('status-text');
 
-        // 2. 監聽 Supabase (Realtime)
-        // 只要資料庫 status 變成 success，無論誰改的，門都會開
-        supabase.channel('gate_realtime')
+        // 2. 監聽 Supabase (使用 supabaseClient)
+        supabaseClient
+            .channel('gate_realtime')
             .on('postgres_changes', { 
                 event: 'UPDATE', 
                 schema: 'public', 
@@ -156,43 +157,39 @@
                 }
             }).subscribe();
 
-        // 3. 🌟 掃描器邏輯：當攝影機掃到內容時
+        // 3. 掃描器邏輯
         async function onScanSuccess(decodedText) {
             console.log("掃描到內容:", decodedText);
 
-            // 檢查是否符合我們定義的指令格式
             if (decodedText.startsWith("GATE_OPEN_CMD:")) {
                 const sid = decodedText.split(":")[1];
                 
-                // 更新狀態為 success -> 觸發 Realtime 開門
-                const { error } = await supabase
+                // 這裡也修正為使用 supabaseClient
+                const { error } = await supabaseClient
                     .from('devices')
                     .update({ status: 'success' })
                     .eq('session_id', sid);
 
                 if (!error) {
-                    // 暫停掃描 5 秒防止重複觸發
                     html5QrcodeScanner.pause();
                     setTimeout(() => html5QrcodeScanner.resume(), 5000);
                 }
             }
         }
 
-        // 啟動鏡頭
         const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 15, qrbox: 150 });
         html5QrcodeScanner.render(onScanSuccess);
 
-        // 4. 開門與語音反饋
         function handleAccessGranted(deviceData) {
             gateFrame.classList.add('open');
             statusPanel.classList.add('access-granted');
             statusText.innerText = "ACCESS GRANTED";
 
-            const utter = new SpeechSynthesisUtterance(`授權成功。歡迎進入，偵測到通行證：${deviceData.session_id}`);
+            const welcomeMsg = `授權成功。歡迎進入，偵測到通行證：${deviceData.session_id}`;
+            const utter = new SpeechSynthesisUtterance(welcomeMsg);
             utter.lang = 'zh-TW';
             window.speechSynthesis.speak(utter);
 
-            // 8 秒後自動復原大門
             setTimeout(() => {
                 gateFrame.classList.remove('open');
                 statusPanel.classList.remove('access-granted');
